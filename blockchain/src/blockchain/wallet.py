@@ -2,7 +2,7 @@ import binascii
 import hashlib
 import json
 import os
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ecdsa import SigningKey, SECP256k1, VerifyingKey
 

@@ -1,9 +1,8 @@
 import json
-import leveldb
 import os
 import time
 from typing import Dict, List, Optional, Set, Tuple
-
+import plyvel
 from .block import Block, BlockHeader
 from .transaction import Transaction, TransactionType
 
@@ -16,10 +15,10 @@ class Blockchain:
         self.db_path = db_path
         os.makedirs(db_path, exist_ok=True)
         
-        # Initialize LevelDB
-        self.blocks_db = leveldb.LevelDB(os.path.join(db_path, 'blocks'))
-        self.utxo_db = leveldb.LevelDB(os.path.join(db_path, 'utxos'))
-        self.wallets_db = leveldb.LevelDB(os.path.join(db_path, 'wallets'))
+        # Initialize Plyvel DB
+        self.blocks_db = plyvel.DB(os.path.join(db_path, 'blocks'), create_if_missing=True)
+        self.utxo_db = plyvel.DB(os.path.join(db_path, 'utxos'), create_if_missing=True)
+        self.wallets_db = plyvel.DB(os.path.join(db_path, 'wallets'), create_if_missing=True)
         
         # Cache for quick access
         self.block_hashes: List[str] = []
@@ -31,13 +30,13 @@ class Blockchain:
     
     def _initialize_blockchain(self) -> None:
         """Initialize the blockchain with genesis block if empty."""
-        try:
-            # Try to get the last block hash
-            last_block_hash = self.blocks_db.Get(b'last_block').decode()
+        # Try to get the last block hash
+        last_block_hash = self.blocks_db.get(b'last_block')
+        if last_block_hash is not None:
             self.block_hashes = json.loads(
-                self.blocks_db.Get(b'block_hashes').decode()
+                self.blocks_db.get(b'block_hashes').decode()
             )
-        except KeyError:
+        else:
             # No blocks yet, create genesis block
             self._create_genesis_block()
     
@@ -60,13 +59,19 @@ class Blockchain:
     
     def _store_block(self, block: Block) -> None:
         """Store a block in the database."""
-        block_data = json.dumps(block.dict()).encode()
-        self.blocks_db.Put(block.hash.encode(), block_data)
+        # Convert block to dictionary and then to JSON
+        block_data = json.dumps(block.to_dict()).encode()
         
-        # Update block hashes list
-        self.block_hashes.append(block.hash)
-        self.blocks_db.Put(b'block_hashes', json.dumps(self.block_hashes).encode())
-        self.blocks_db.Put(b'last_block', block.hash.encode())
+        # Store the block
+        with self.blocks_db.write_batch() as batch:
+            batch.put(block.hash.encode(), block_data)
+            
+            # Update the last block hash
+            batch.put(b'last_block', block.hash.encode())
+            
+            # Update the block hashes list
+            self.block_hashes.append(block.hash)
+            batch.put(b'block_hashes', json.dumps(self.block_hashes).encode())
         
         # Update UTXO set
         self._update_utxo_set(block)

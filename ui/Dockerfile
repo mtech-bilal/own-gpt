@@ -3,15 +3,27 @@ FROM node:18-slim as build
 
 WORKDIR /app
 
-# Copy package files
+# Set environment to production
+ENV NODE_ENV=production
+
+# Install Python and build dependencies
+RUN apt-get update && apt-get install -y python3 make g++
+
+# Copy package files first for better caching
 COPY package*.json ./
 
-# Install dependencies with legacy peer deps
+# Install dependencies with legacy peer deps and clean cache
 RUN npm cache clean --force && \
-    npm install --legacy-peer-deps
+    npm install --legacy-peer-deps --no-optional && \
+    npm install -g typescript && \
+    npm install --save-dev typescript @types/node @types/react @types/react-dom @types/jest
 
 # Copy source files
 COPY . .
+
+# Set environment variables
+ENV GENERATE_SOURCEMAP=false
+ENV INLINE_RUNTIME_CHUNK=false
 
 # Build the app
 RUN npm run build
@@ -25,9 +37,11 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 # Copy built files from build stage
 COPY --from=build /app/build /usr/share/nginx/html
 
-# Copy build script and make it executable
-COPY build.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/build.sh
+# Expose port 80
+EXPOSE 80
+
+# Start Nginx
+CMD ["nginx", "-g", "daemon off;"]
 
 # Set environment variables
 ENV NODE_ENV=production

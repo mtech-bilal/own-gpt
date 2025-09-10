@@ -103,3 +103,14 @@ MIT
 ## Contributing
 
 Contributions are welcome! Please read our contributing guidelines before submitting pull requests.
+
+## Docker commands
+# Stop and remove any existing containers
+docker-compose down -v
+
+# Clean up Docker system
+docker system prune -f
+docker volume prune -f
+
+# Rebuild and start the services
+docker-compose up --build

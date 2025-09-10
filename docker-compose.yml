@@ -98,10 +98,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
-    networks:
-      - localgpt-network
 
-  # Web UI
+  # Web UI Service
   ui:
     build:
       context: ./ui
@@ -110,10 +108,12 @@ services:
     ports:
       - "3000:80"
     environment:
-      - REACT_APP_API_URL=http://localhost:8000
-      - NODE_ENV=development
+      - REACT_APP_API_URL=http://backend:8000
+      - REACT_APP_BLOCKCHAIN_URL=http://blockchain:5000
+      - NODE_ENV=production
     depends_on:
       - backend
+      - blockchain
     restart: unless-stopped
     networks:
       - localgpt-network
