@@ -1,0 +1,136 @@
+version: '3.8'
+
+services:
+  # MongoDB Service
+  mongodb:
+    image: mongo:6.0
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    environment:
+      - MONGO_INITDB_DATABASE=localgpt
+      - MONGO_INITDB_ROOT_USERNAME=localgpt
+      - MONGO_INITDB_ROOT_PASSWORD=localgpt123
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - localgpt-network
+
+  # MongoDB Express (Web UI for MongoDB)
+  mongo-express:
+    image: mongo-express:1.0.0
+    container_name: mongo-express
+    ports:
+      - "8081:8081"
+    environment:
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=localgpt
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=localgpt123
+      - ME_CONFIG_MONGODB_SERVER=mongodb
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - localgpt-network
+
+  # Blockchain service
+  blockchain:
+    build:
+      context: ./blockchain
+      dockerfile: Dockerfile
+    container_name: blockchain
+    ports:
+      - "5000:5000"
+    volumes:
+      - blockchain_data:/data/blockchain
+    env_file: .env
+    environment:
+      - MONGODB_URI=mongodb://localgpt:localgpt123@mongodb:27017/localgpt?authSource=admin
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - localgpt-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Backend service (AI + Memory)
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - model_data:/app/model_data
+      - memory_index:/app/memory_index
+    env_file: .env
+    environment:
+      - BLOCKCHAIN_SERVICE=http://blockchain:5000
+      - MONGODB_URI=mongodb://localgpt:localgpt123@mongodb:27017/localgpt?authSource=admin
+      - MONGODB_DB=localgpt
+      - RUN_MIGRATIONS=${RUN_MIGRATIONS:-false}
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      blockchain:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - localgpt-network
+
+  # Web UI
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    container_name: ui
+    ports:
+      - "3000:80"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+      - NODE_ENV=development
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - localgpt-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  mongodb_data:
+  mongodb_config:
+  blockchain_data:
+  model_data:
+  memory_index:
+
+networks:
+  localgpt-network:
+    driver: bridge
